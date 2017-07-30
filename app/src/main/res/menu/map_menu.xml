@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+
+    <item
+        android:id="@+id/menu_search"
+        android:title="Search"
+        android:icon="@mipmap/ic_launcher"
+        android:actionViewClass="android.widget.SearchView"
+        app:actionViewClass="android.support.v7.widget.SearchView"
+        app:showAsAction="always"
+
+        />
+    <item
+        android:id="@+id/select_bus_menu"
+        android:orderInCategory="100"
+        app:showAsAction="always"
+        android:icon="@drawable/ic_directions_bus_black_24dp"
+        android:title="Select bus" />
+    <item
+        android:id="@+id/center_location_menu"
+        android:icon="@drawable/ic_location_on_black_24dp"
+        android:orderInCategory="100"
+        app:showAsAction="always"
+        android:title="Center location" />
+
+</menu>

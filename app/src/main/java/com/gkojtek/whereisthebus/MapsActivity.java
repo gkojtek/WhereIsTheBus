@@ -11,8 +11,8 @@ import android.support.v4.content.ContextCompat;
 import android.support.v7.app.AlertDialog;
 import android.support.v7.app.AppCompatActivity;
 import android.support.v7.widget.SearchView;
-import android.text.InputType;
 import android.util.Log;
+import android.util.SparseArray;
 import android.view.Menu;
 import android.view.MenuInflater;
 import android.view.MenuItem;
@@ -30,8 +30,10 @@ import com.google.android.gms.maps.CameraUpdateFactory;
 import com.google.android.gms.maps.GoogleMap;
 import com.google.android.gms.maps.OnMapReadyCallback;
 import com.google.android.gms.maps.SupportMapFragment;
+import com.google.android.gms.maps.model.BitmapDescriptorFactory;
 import com.google.android.gms.maps.model.CameraPosition;
 import com.google.android.gms.maps.model.LatLng;
+import com.google.android.gms.maps.model.Marker;
 import com.google.android.gms.maps.model.MarkerOptions;
 import com.google.gson.Gson;
 
@@ -43,6 +45,7 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -52,7 +55,7 @@ public class MapsActivity extends AppCompatActivity
         implements OnMapReadyCallback,
         GoogleApiClient.ConnectionCallbacks,
         GoogleApiClient.OnConnectionFailedListener,
-        LocationListener {
+        LocationListener, GoogleMap.OnMarkerClickListener {
 
     private static final String LOG_TAG = "toshiba";
     private GoogleMap mGoogleMap;
@@ -61,8 +64,11 @@ public class MapsActivity extends AppCompatActivity
     private GoogleApiClient mGoogleApiClient;
     private Location lastKnownLocation;
     //    private Marker mCurrLocationMarker;
+    private List<Bus> processedBuses;
     private List<Bus> buses;
     private List<String> selectedBuses;
+    HashMap<Integer, Marker> markersHashMap = new HashMap<>();
+
     //        public static final String BUS_POSITIONS_URL = "https://api.um.warszawa.pl/api/action/busestrams_get/?resource_id=%20f2e5503e-%20927d-4ad3-9500-4ab9e55deb59&apikey=41207ac7-eefe-4b5b-87d8-0704cdec0620&type=1&line=185";
     public static final String BUS_POSITIONS_URL = "https://api.um.warszawa.pl/api/action/busestrams_get/?resource_id=%20f2e5503e-%20927d-4ad3-9500-4ab9e55deb59&apikey=41207ac7-eefe-4b5b-87d8-0704cdec0620&type=1";
 
@@ -71,6 +77,10 @@ public class MapsActivity extends AppCompatActivity
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
+
+        buses = new ArrayList<>();
+
+//        SphericalUtil.computeHeading(latlng1, latlng2);
 
 //        getSupportActionBar().setTitle("Autobusy ZTM");
 
@@ -90,6 +100,9 @@ public class MapsActivity extends AppCompatActivity
             @Override
             public boolean onQueryTextSubmit(String query) {
                 selectedBuses = Arrays.asList(query.split("\\s*,\\s*"));
+                mGoogleMap.clear();
+                markersHashMap = new HashMap<>();
+
                 return false;
             }
 
@@ -116,7 +129,7 @@ public class MapsActivity extends AppCompatActivity
 
                 break;
             case R.id.select_bus_menu:
-                Toast.makeText(this, "Menu item 2 selected", Toast.LENGTH_SHORT).show();
+                Toast.makeText(this, "Nie wolno", Toast.LENGTH_SHORT).show();
                 break;
         }
         return true;
@@ -124,7 +137,7 @@ public class MapsActivity extends AppCompatActivity
 
     void createBusesFromJson(String json) throws JSONException {
         // De-serialize the JSON string into an array of objects
-        buses = new ArrayList<>();
+        processedBuses = new ArrayList<>();
 
         Gson gson = new Gson();
         BusLocations busLocations = gson.fromJson(String.valueOf(json), BusLocations.class);
@@ -133,25 +146,42 @@ public class MapsActivity extends AppCompatActivity
         for (Result temp : result) {
             double lat = temp.getLat();
             double lon = temp.getLon();
-            String tempLine = temp.getLines();
             LatLng tempLatLng = new LatLng(lat, lon);
-            Bus tempBus = new Bus(tempLatLng, tempLine);
-            buses.add(tempBus);
+            String tempLine = temp.getLines();
+            String tempBrigade = temp.getBrigade();
+            Bus tempBus = new Bus(tempLatLng, tempLine, tempBrigade);
+            processedBuses.add(tempBus);
         }
 
-        createMarkersFromBuses();
+
+        runOnUiThread(new Runnable() {
+            public void run() {
+                createMarkersFromBuses();
+            }
+        });
+
+
     }
 
     private void createMarkersFromBuses() {
-        mGoogleMap.clear();
 
-        for (Bus bus : buses) {
+        for (Bus bus : processedBuses) {
+            Integer id = bus.hashCode();
+
             if (selectedBuses != null && selectedBuses.contains(bus.getLine())) {
-                mGoogleMap.addMarker(new MarkerOptions()
-                        .position(bus.getLatLng())
-                        .title(bus.getLine())
-                        .snippet("autobus")
-                        .anchor(0.5f, 0.5f));
+                if (markersHashMap.containsKey(id)) {
+                    Marker marker = markersHashMap.get(id);
+                    marker.setPosition(bus.getCurrentLatLng()); // Update your marker
+                } else {
+                    Marker usersMarker = mGoogleMap.addMarker(new MarkerOptions()
+                            .position(bus.getCurrentLatLng())
+                            .title(bus.getLine())
+                            .snippet("autobus")
+                            .anchor(0.5f, 0.5f)
+                            .icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_AZURE)));
+
+                    markersHashMap.put(id, usersMarker);
+                }
             }
         }
     }
@@ -173,12 +203,11 @@ public class MapsActivity extends AppCompatActivity
 //                try {
 //                    retrieveAndAddBuses();
 //                } catch (IOException e) {
-//                    Log.e(LOG_TAG, "Cannot retrive buses", e);
+//                    Log.e(LOG_TAG, "Cannot retrive processedBuses", e);
 //                    return;
 //                }
 //            }
 //        }).start();
-
 
 
         Runnable helloRunnable = new Runnable() {
@@ -186,6 +215,8 @@ public class MapsActivity extends AppCompatActivity
                 try {
                     retrieveAndAddBuses();
                 } catch (IOException e) {
+                    e.printStackTrace();
+                } catch (JSONException e) {
                     e.printStackTrace();
                 }
             }
@@ -197,7 +228,7 @@ public class MapsActivity extends AppCompatActivity
     }
 
 
-    protected void retrieveAndAddBuses() throws IOException {
+    protected void retrieveAndAddBuses() throws IOException, JSONException {
         HttpURLConnection conn = null;
         final StringBuilder json = new StringBuilder();
         try {
@@ -223,15 +254,9 @@ public class MapsActivity extends AppCompatActivity
 
         // Create markers for the city data.
         // Must run this on the UI thread since it's a UI operation.
-        runOnUiThread(new Runnable() {
-            public void run() {
-                try {
-                    createBusesFromJson(json.toString());
-                } catch (JSONException e) {
-                    Log.e(LOG_TAG, "Error processing JSON", e);
-                }
-            }
-        });
+
+        createBusesFromJson(json.toString());
+
     }
 
     @Override
@@ -379,5 +404,12 @@ public class MapsActivity extends AppCompatActivity
             // other 'case' lines to check for other
             // permissions this app might request
         }
+    }
+
+    @Override
+    public boolean onMarkerClick(Marker marker) {
+        CameraPosition cameraPosition = CameraPosition.builder().target(marker.getPosition()).zoom(16).bearing(0).build();
+        mGoogleMap.animateCamera(CameraUpdateFactory.newCameraPosition(cameraPosition));
+        return false;
     }
 }

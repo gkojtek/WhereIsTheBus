@@ -1,15 +1,30 @@
 package com.gkojtek.whereisthebus.model;
 
+import android.util.Log;
+
 import com.google.android.gms.maps.model.LatLng;
+import com.google.maps.android.SphericalUtil;
 
 public class Bus {
     private LatLng currentLatLng;
     private LatLng previousLatLng;
     private String line;
     private String brigade;
+    private boolean isPositionUpdated;
+
+    public boolean isPositionUpdated() {
+        return isPositionUpdated;
+    }
+
+    public float getHeading() {
+        return (float) heading;
+    }
+
+    private double heading;
 
     public Bus(LatLng currentLatLng, String line, String brigade) {
         this.currentLatLng = currentLatLng;
+        previousLatLng = currentLatLng;
         this.line = line;
         this.brigade = brigade;
     }
@@ -37,6 +52,10 @@ public class Bus {
     public void updatePosition(LatLng latLng) {
         previousLatLng = currentLatLng;
         currentLatLng = latLng;
+        double distance = SphericalUtil.computeDistanceBetween(previousLatLng, currentLatLng);
+        Log.d(line + " distance: ", String.valueOf(distance) + " : " + previousLatLng.latitude + " i " + currentLatLng.latitude);
+        heading = SphericalUtil.computeHeading(previousLatLng, currentLatLng);
+        isPositionUpdated = true;
     }
 
 

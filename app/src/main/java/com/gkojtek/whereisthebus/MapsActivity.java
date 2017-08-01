@@ -3,9 +3,14 @@ package com.gkojtek.whereisthebus;
 import android.Manifest;
 import android.content.DialogInterface;
 import android.content.pm.PackageManager;
+import android.graphics.Bitmap;
+import android.graphics.Canvas;
+import android.graphics.drawable.Drawable;
 import android.location.Location;
+import android.os.AsyncTask;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.StrictMode;
 import android.support.v4.app.ActivityCompat;
 import android.support.v4.content.ContextCompat;
 import android.support.v7.app.AlertDialog;
@@ -30,6 +35,7 @@ import com.google.android.gms.maps.CameraUpdateFactory;
 import com.google.android.gms.maps.GoogleMap;
 import com.google.android.gms.maps.OnMapReadyCallback;
 import com.google.android.gms.maps.SupportMapFragment;
+import com.google.android.gms.maps.model.BitmapDescriptor;
 import com.google.android.gms.maps.model.BitmapDescriptorFactory;
 import com.google.android.gms.maps.model.CameraPosition;
 import com.google.android.gms.maps.model.LatLng;
@@ -58,6 +64,7 @@ public class MapsActivity extends AppCompatActivity
         LocationListener, GoogleMap.OnMarkerClickListener {
 
     private static final String LOG_TAG = "toshiba";
+    private static final boolean DEVELOPER_MODE = false;
     private GoogleMap mGoogleMap;
     private SupportMapFragment mapFrag;
     private LocationRequest mLocationRequest;
@@ -68,26 +75,56 @@ public class MapsActivity extends AppCompatActivity
     private List<Bus> buses;
     private List<String> selectedBuses;
     HashMap<Integer, Marker> markersHashMap = new HashMap<>();
+    BitmapDescriptor arrow;
+    private String jsonString;
 
-    //        public static final String BUS_POSITIONS_URL = "https://api.um.warszawa.pl/api/action/busestrams_get/?resource_id=%20f2e5503e-%20927d-4ad3-9500-4ab9e55deb59&apikey=41207ac7-eefe-4b5b-87d8-0704cdec0620&type=1&line=185";
+//            public static final String BUS_POSITIONS_URL = "https://api.um.warszawa.pl/api/action/busestrams_get/?resource_id=%20f2e5503e-%20927d-4ad3-9500-4ab9e55deb59&apikey=41207ac7-eefe-4b5b-87d8-0704cdec0620&type=1&line=185";
+    private SparseArray<Bus> readyToMove;
+    private SparseArray<Bus> readyToDraw;
+
     public static final String BUS_POSITIONS_URL = "https://api.um.warszawa.pl/api/action/busestrams_get/?resource_id=%20f2e5503e-%20927d-4ad3-9500-4ab9e55deb59&apikey=41207ac7-eefe-4b5b-87d8-0704cdec0620&type=1";
 
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        if (DEVELOPER_MODE) {
+            StrictMode.setThreadPolicy(new StrictMode.ThreadPolicy.Builder()
+                    .detectDiskReads()
+                    .detectDiskWrites()
+                    .detectAll()
+                    .penaltyLog()
+                    .build());
+            StrictMode.setVmPolicy(new StrictMode.VmPolicy.Builder()
+                    .detectLeakedSqlLiteObjects()
+                    .detectLeakedClosableObjects()
+                    .penaltyLog()
+                    .penaltyDeath()
+                    .build());
+        }
         setContentView(R.layout.activity_main);
 
         buses = new ArrayList<>();
+        arrow = getMarkerIconFromDrawable(getResources().getDrawable(R.drawable.bus_side));
 
-//        SphericalUtil.computeHeading(latlng1, latlng2);
 
-//        getSupportActionBar().setTitle("Autobusy ZTM");
+        getSupportActionBar().setTitle("Autobusy ZTM");
 
         mapFrag = (SupportMapFragment) getSupportFragmentManager().findFragmentById(R.id.map);
         mapFrag.getMapAsync(this);
         setUpMap();
     }
+
+    private BitmapDescriptor getMarkerIconFromDrawable(Drawable drawable) {
+        Canvas canvas = new Canvas();
+        Bitmap bitmap = Bitmap.createBitmap(drawable.getIntrinsicWidth(), drawable.getIntrinsicHeight(), Bitmap.Config.ARGB_8888);
+        canvas.setBitmap(bitmap);
+        drawable.setBounds(0, 0, drawable.getIntrinsicWidth(), drawable.getIntrinsicHeight());
+        drawable.draw(canvas);
+        return BitmapDescriptorFactory.fromBitmap(bitmap);
+    }
+
+
 
     @Override
     public boolean onCreateOptionsMenu(Menu menu) {
@@ -135,56 +172,95 @@ public class MapsActivity extends AppCompatActivity
         return true;
     }
 
-    void createBusesFromJson(String json) throws JSONException {
-        // De-serialize the JSON string into an array of objects
-        processedBuses = new ArrayList<>();
+    void createBusesFromJson(String json){
+//        // De-serialize the JSON string into an array of objects
+//        processedBuses = new ArrayList<>();
+//
+//        Gson gson = new Gson();
+//        BusLocations busLocations = gson.fromJson(String.valueOf(json), BusLocations.class);
+//        List<Result> result = busLocations.getResult();
+//
+//        for (Result temp : result) {
+//            double lat = temp.getLat();
+//            double lon = temp.getLon();
+//            LatLng tempLatLng = new LatLng(lat, lon);
+//            String tempLine = temp.getLines();
+//            String tempBrigade = temp.getBrigade();
+//            Bus tempBus = new Bus(tempLatLng, tempLine, tempBrigade);
+//            processedBuses.add(tempBus);
+//        }
 
-        Gson gson = new Gson();
-        BusLocations busLocations = gson.fromJson(String.valueOf(json), BusLocations.class);
-        List<Result> result = busLocations.getResult();
-
-        for (Result temp : result) {
-            double lat = temp.getLat();
-            double lon = temp.getLon();
-            LatLng tempLatLng = new LatLng(lat, lon);
-            String tempLine = temp.getLines();
-            String tempBrigade = temp.getBrigade();
-            Bus tempBus = new Bus(tempLatLng, tempLine, tempBrigade);
-            processedBuses.add(tempBus);
-        }
+        new ProcessData().execute(json);
 
 
-        runOnUiThread(new Runnable() {
-            public void run() {
-                createMarkersFromBuses();
-            }
-        });
 
 
     }
 
     private void createMarkersFromBuses() {
 
-        for (Bus bus : processedBuses) {
-            Integer id = bus.hashCode();
+//        final SparseArray<Bus> readyToMove = new SparseArray<>();
+//        final SparseArray<Bus> readyToDraw = new SparseArray<>();
+//
+//        for (Bus bus : processedBuses) {
+//            Integer id = bus.hashCode();
+//
+//            if (selectedBuses != null && selectedBuses.contains(bus.getLine())) {
+//                if (markersHashMap.containsKey(id)) {
+//
+//                    Marker marker = markersHashMap.get(id);
+//                    for (Bus tempBus : buses) {
+//                        if (tempBus.hashCode() == bus.hashCode() && !(tempBus.getCurrentLatLng().equals(bus.getCurrentLatLng()))) {
+//                            tempBus.updatePosition(bus.getCurrentLatLng());
+//                            bus = tempBus;
+//                        }
+//                    }
+//                    readyToMove.put(id, bus);
+//
+//                    // Update your marker
+//                } else {
+//                    buses.add(bus);
+//                    readyToDraw.put(id, bus);
+//                }
+//            }
+//        }
 
-            if (selectedBuses != null && selectedBuses.contains(bus.getLine())) {
-                if (markersHashMap.containsKey(id)) {
+
+
+    }
+
+    private void updateMarkers(final SparseArray<Bus> readyToMove, final SparseArray<Bus> readyToDraw) {
+        runOnUiThread(new Runnable() {
+            public void run() {
+                for (int i = 0; i < readyToMove.size(); i++) {
+                    int id = readyToMove.keyAt(i);
+                    Bus tempBus = readyToMove.get(id);
+
                     Marker marker = markersHashMap.get(id);
-                    marker.setPosition(bus.getCurrentLatLng()); // Update your marker
-                } else {
-                    Marker usersMarker = mGoogleMap.addMarker(new MarkerOptions()
+                    marker.setPosition(tempBus.getCurrentLatLng());
+                    if (tempBus.isPositionUpdated()) {
+                        marker.setRotation(tempBus.getHeading()-90);
+                    }
+                }
+
+                for (int i = 0; i < readyToDraw.size(); i++) {
+                    int id = readyToDraw.keyAt(i);
+                    Bus bus = readyToDraw.get(id);
+
+                    Marker marker = mGoogleMap.addMarker(new MarkerOptions()
                             .position(bus.getCurrentLatLng())
                             .title(bus.getLine())
                             .snippet("autobus")
                             .anchor(0.5f, 0.5f)
-                            .icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_AZURE)));
+//                            .icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_AZURE))
+                            .icon(arrow));
 
-                    markersHashMap.put(id, usersMarker);
+                    markersHashMap.put(id, marker);
                 }
             }
-        }
+        });
     }
+
 
     @Override
     public void onPause() {
@@ -212,6 +288,7 @@ public class MapsActivity extends AppCompatActivity
 
         Runnable helloRunnable = new Runnable() {
             public void run() {
+                android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_BACKGROUND);
                 try {
                     retrieveAndAddBuses();
                 } catch (IOException e) {
@@ -256,6 +333,7 @@ public class MapsActivity extends AppCompatActivity
         // Must run this on the UI thread since it's a UI operation.
 
         createBusesFromJson(json.toString());
+        jsonString = json.toString();
 
     }
 
@@ -411,5 +489,66 @@ public class MapsActivity extends AppCompatActivity
         CameraPosition cameraPosition = CameraPosition.builder().target(marker.getPosition()).zoom(16).bearing(0).build();
         mGoogleMap.animateCamera(CameraUpdateFactory.newCameraPosition(cameraPosition));
         return false;
+    }
+
+    private class ProcessData extends AsyncTask<String, String, Void> {
+
+        @Override
+        protected void onPostExecute(Void aVoid) {
+            super.onPostExecute(aVoid);
+            updateMarkers(readyToMove, readyToDraw);
+        }
+
+        @Override
+        protected Void doInBackground(String... strings) {
+
+            // De-serialize the JSON string into an array of objects
+            processedBuses = new ArrayList<>();
+            try {
+                Gson gson = new Gson();
+                BusLocations busLocations = gson.fromJson(String.valueOf(jsonString), BusLocations.class);
+                List<Result> result = busLocations.getResult();
+
+                for (Result temp : result) {
+                    double lat = temp.getLat();
+                    double lon = temp.getLon();
+                    LatLng tempLatLng = new LatLng(lat, lon);
+                    String tempLine = temp.getLines();
+                    String tempBrigade = temp.getBrigade();
+                    Bus tempBus = new Bus(tempLatLng, tempLine, tempBrigade);
+                    processedBuses.add(tempBus);
+                }
+
+            } catch (IllegalStateException error) {
+                processedBuses = new ArrayList<>();
+            }
+
+            readyToMove = new SparseArray<>();
+            readyToDraw = new SparseArray<>();
+
+            for (Bus bus : processedBuses) {
+                Integer id = bus.hashCode();
+
+                if (selectedBuses != null && selectedBuses.contains(bus.getLine())) {
+                    if (markersHashMap.containsKey(id)) {
+
+                        Marker marker = markersHashMap.get(id);
+                        for (Bus tempBus : buses) {
+                            if (tempBus.hashCode() == bus.hashCode() && !(tempBus.getCurrentLatLng().equals(bus.getCurrentLatLng()))) {
+                                tempBus.updatePosition(bus.getCurrentLatLng());
+                                bus = tempBus;
+                            }
+                        }
+                        readyToMove.put(id, bus);
+
+                        // Update your marker
+                    } else {
+                        buses.add(bus);
+                        readyToDraw.put(id, bus);
+                    }
+                }
+            }
+            return null;
+        }
     }
 }

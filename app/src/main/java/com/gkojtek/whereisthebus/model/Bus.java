@@ -10,7 +10,10 @@ public class Bus {
     private LatLng previousLatLng;
     private String line;
     private String brigade;
+    private double previousHeading;
     private boolean isPositionUpdated;
+    private double headingMean;
+    private double heading;
 
     public boolean isPositionUpdated() {
         return isPositionUpdated;
@@ -20,7 +23,7 @@ public class Bus {
         return (float) heading;
     }
 
-    private double heading;
+    private double currentHeading;
 
     public Bus(LatLng currentLatLng, String line, String brigade) {
         this.currentLatLng = currentLatLng;
@@ -53,11 +56,21 @@ public class Bus {
         previousLatLng = currentLatLng;
         currentLatLng = latLng;
         double distance = SphericalUtil.computeDistanceBetween(previousLatLng, currentLatLng);
-        Log.d(line + " distance: ", String.valueOf(distance) + " : " + previousLatLng.latitude + " i " + currentLatLng.latitude);
-        heading = SphericalUtil.computeHeading(previousLatLng, currentLatLng);
+        Log.d(line + " HASH: " + hashCode() + ": distance: ", String.valueOf(distance) + " : " + previousLatLng.latitude + " i " + currentLatLng.latitude);
         isPositionUpdated = true;
-    }
 
+        if (previousHeading != 0.0d) {
+            currentHeading = SphericalUtil.computeHeading(previousLatLng, currentLatLng);
+            headingMean = (currentHeading + previousHeading) / 2;
+            previousHeading = currentHeading;
+            heading = headingMean;
+        } else {
+            previousHeading = currentHeading;
+            currentHeading = SphericalUtil.computeHeading(previousLatLng, currentLatLng);
+            heading = currentHeading;
+        }
+
+    }
 
     @Override
     public int hashCode() {
